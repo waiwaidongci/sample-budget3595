@@ -6,8 +6,36 @@ from src.config.domain import DOMAIN
 from src.models.user import User
 from src.models.study import Study
 from src.models.observation import Observation
+from src.models.pilot import PilotPlan, PilotDaily, PilotSeal
 from src.models import run,review,audit
 from src.utils.security import hash_password
+
+PILOT_NAME='榆灯·单城试投·冬季主城'
+PILOT_TREATED='主城'
+PILOT_LAUNCH='2026-12-01'
+PILOT_CONTROLS=['东城','西城','南城','北城']
+
+
+def seed_pilot(db, rng):
+    """合成一座试验城与四座对照城的逐城日报。
+
+    只写投放前数据与计划；对照权重留给分析师在页面上封存，
+    避免把“封存”这一人工决定伪造进种子数据。
+    """
+    if db.scalar(select(PilotPlan).where(PilotPlan.name==PILOT_NAME)): return
+    plan=PilotPlan(name=PILOT_NAME,treated_city=PILOT_TREATED,launch_date=PILOT_LAUNCH,
+                   description='单城试投 / 合成逐城日报 / 仅用于方法与流程演示',revision=1,
+                   created_by='system@demo.local',created_at='2026-11-30T00:00:00+00:00')
+    db.add(plan);db.flush()
+    base={PILOT_TREATED:.20,'东城':.175,'西城':.225,'南城':.19,'北城':.21}
+    for d in range(1,15):
+        date=f'2026-11-{d:02d}'
+        for n,city in enumerate([PILOT_TREATED]+PILOT_CONTROLS):
+            rate=base[city]+float(rng.normal(0,.004))
+            impressions=12000+n*800
+            db.add(PilotDaily(plan_id=plan.id,city=city,date=date,impressions=impressions,
+                              clicks=int(round(rate*impressions)),created_by='system@demo.local',
+                              created_at='2026-11-30T00:00:00+00:00',updated_at='2026-11-30T00:00:00+00:00'))
 
 def seed():
     Base.metadata.create_all(engine)
@@ -37,7 +65,8 @@ def seed():
                 key=f'DEMO-{k+1}-{n+1:04}'
                 if not db.scalar(select(Observation.id).where(Observation.study_id==study.id,Observation.source_key==key)):
                     db.add(Observation(study_id=study.id,source_key=key,values=values))
+        seed_pilot(db,rng)
         db.commit()
-        counts={model.__tablename__:db.scalar(select(func.count()).select_from(model)) for model in (User,Study,Observation)}
+        counts={model.__tablename__:db.scalar(select(func.count()).select_from(model)) for model in (User,Study,Observation,PilotPlan,PilotDaily)}
         print(json.dumps(counts));return counts
 if __name__=='__main__': seed()
